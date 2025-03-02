@@ -13,6 +13,10 @@ spring:
   sleuth:
     sampler:
       probability: 1.0
+  security:
+    user:
+      name: default
+      password: defaultpassword
 server:
   max-http-request-header-size: 16KB
 management:
@@ -22,7 +26,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: '*' #TODO enable only info and health for security purposes. Consider that we may want to still access other actuator endpoints securely.
+        include: 'info,health'
 logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+integration:
+  client:
+    url: "https://jsonplaceholder.typicode.com"
+springdoc:
+  api-docs:
+    path: "/api-docs"

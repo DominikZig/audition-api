@@ -1,45 +1,101 @@
 package com.audition.integration;
 
 import com.audition.common.exception.SystemException;
+import com.audition.common.logging.AuditionLogger;
+import com.audition.model.AuditionComment;
 import com.audition.model.AuditionPost;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import org.springframework.beans.factory.annotation.Autowired;
+import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
+@Slf4j
 public class AuditionIntegrationClient {
 
+    private final transient RestTemplate restTemplate;
+    private final transient AuditionLogger logger;
 
-    @Autowired
-    private RestTemplate restTemplate;
+    @Value("${integration.client.url}")
+    private transient String baseUrl;
+
+    private static final String POSTS_ENDPOINT = "/posts";
+    private static final String COMMENTS_ENDPOINT = "/comments";
+
+    public AuditionIntegrationClient(final RestTemplate restTemplate, final AuditionLogger logger) {
+        this.restTemplate = restTemplate;
+        this.logger = logger;
+    }
 
     public List<AuditionPost> getPosts() {
-        // TODO make RestTemplate call to get Posts from https://jsonplaceholder.typicode.com/posts
-
-        return new ArrayList<>();
+        return Optional.ofNullable(restTemplate.exchange(
+                baseUrl + POSTS_ENDPOINT,
+                HttpMethod.GET, null, new ParameterizedTypeReference<List<AuditionPost>>() {
+                }).getBody())
+            .orElse(Collections.emptyList());
     }
 
     public AuditionPost getPostById(final String id) {
-        // TODO get post by post ID call from https://jsonplaceholder.typicode.com/posts/
         try {
-            return new AuditionPost();
+            return restTemplate.getForObject(baseUrl + POSTS_ENDPOINT + "/" + id, AuditionPost.class);
         } catch (final HttpClientErrorException e) {
+            logger.logErrorWithException(log, e.getMessage(), e);
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
-                throw new SystemException("Cannot find a Post with id " + id, "Resource Not Found",
-                    404);
-            } else {
-                // TODO Find a better way to handle the exception so that the original error message is not lost. Feel free to change this function.
-                throw new SystemException("Unknown Error message");
+                throw new SystemException("Cannot find a Post with id " + id, SystemException.RESOURCE_NOT_FOUND_STR,
+                    HttpStatus.NOT_FOUND.value(), e);
             }
+            throw new SystemException(e.getMessage(), e.getStatusCode().value(), e);
         }
     }
 
-    // TODO Write a method GET comments for a post from https://jsonplaceholder.typicode.com/posts/{postId}/comments - the comments must be returned as part of the post.
+    public AuditionPost getPostWithCommentsById(final String id) {
+        try {
+            final AuditionPost auditionPost = getPostById(id);
+            final List<AuditionComment> comments = Optional.ofNullable(restTemplate.exchange(
+                    baseUrl + POSTS_ENDPOINT + "/" + id + COMMENTS_ENDPOINT,
+                    HttpMethod.GET, null, new ParameterizedTypeReference<List<AuditionComment>>() {
+                    }).getBody())
+                .orElse(Collections.emptyList());
 
-    // TODO write a method. GET comments for a particular Post from https://jsonplaceholder.typicode.com/comments?postId={postId}.
-    // The comments are a separate list that needs to be returned to the API consumers. Hint: this is not part of the AuditionPost pojo.
+            auditionPost.setComments(comments);
+            return auditionPost;
+        } catch (final HttpClientErrorException e) {
+            logger.logErrorWithException(log, e.getMessage(), e);
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                throw new SystemException("Cannot find a Post with Comments with id " + id,
+                    SystemException.RESOURCE_NOT_FOUND_STR,
+                    HttpStatus.NOT_FOUND.value(), e);
+            }
+            throw new SystemException(e.getMessage(), e.getStatusCode().value(), e);
+        }
+    }
+
+    public List<AuditionComment> getCommentsByPostId(final String id) {
+        try {
+            //confirm post exists
+            getPostById(id);
+
+            return Optional.ofNullable(restTemplate.exchange(
+                    baseUrl + COMMENTS_ENDPOINT + "?postId=" + id,
+                    HttpMethod.GET, null, new ParameterizedTypeReference<List<AuditionComment>>() {
+                    }).getBody())
+                .orElse(Collections.emptyList());
+
+        } catch (final HttpClientErrorException e) {
+            logger.logErrorWithException(log, e.getMessage(), e);
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                throw new SystemException("Cannot find Comments for a Post with id " + id,
+                    SystemException.RESOURCE_NOT_FOUND_STR,
+                    HttpStatus.NOT_FOUND.value(), e);
+            }
+            throw new SystemException(e.getMessage(), e.getStatusCode().value(), e);
+        }
+    }
 }

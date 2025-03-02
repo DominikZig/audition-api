@@ -27,6 +27,7 @@ pmd {
 }
 
 test {
+    systemProperty 'logging.level.root', 'DEBUG'
     finalizedBy jacocoTestReport // report is always generated after tests run
 }
 
